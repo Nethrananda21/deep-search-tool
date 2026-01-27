@@ -1,9 +1,9 @@
 """
-Optimized Asynchronous HTTP fetcher
+Optimized Asynchronous HTTP fetcher with Session Reuse
 Key optimizations:
-1. Retry logic with exponential backoff
-2. Response caching for repeated requests
-3. Faster timeout handling
+1. TCP Connection Pooling via session reuse
+2. Retry logic with exponential backoff
+3. Response caching for repeated requests
 4. Semaphore for rate limiting
 """
 import asyncio
@@ -14,9 +14,13 @@ from config import config
 
 
 class AsyncFetcher:
-    """Optimized async HTTP client"""
+    """Optimized async HTTP client with session reuse"""
     
-    # Simple in-memory cache for recent requests
+    # Class-level shared session for connection pooling
+    _session: Optional[aiohttp.ClientSession] = None
+    _session_lock = asyncio.Lock()
+    
+    # Simple in-memory cache
     _cache: Dict[str, Any] = {}
     _cache_max_size = 100
     
@@ -30,8 +34,29 @@ class AsyncFetcher:
         }
         self._semaphore = asyncio.Semaphore(self.max_concurrent)
     
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create a reusable session with connection pooling"""
+        if AsyncFetcher._session is None or AsyncFetcher._session.closed:
+            async with AsyncFetcher._session_lock:
+                if AsyncFetcher._session is None or AsyncFetcher._session.closed:
+                    # TCP Connection pooling settings
+                    connector = aiohttp.TCPConnector(
+                        limit=self.max_concurrent,
+                        limit_per_host=5,
+                        ttl_dns_cache=300,
+                        use_dns_cache=True,
+                        ssl=False
+                    )
+                    timeout = aiohttp.ClientTimeout(total=self.timeout)
+                    AsyncFetcher._session = aiohttp.ClientSession(
+                        connector=connector,
+                        timeout=timeout,
+                        headers=self.headers
+                    )
+        return AsyncFetcher._session
+    
     def _get_cache_key(self, url: str, params: Dict = None) -> str:
-        """Generate cache key from URL and params"""
+        """Generate cache key"""
         key = url + str(sorted(params.items()) if params else "")
         return hashlib.md5(key.encode()).hexdigest()[:16]
     
@@ -45,44 +70,44 @@ class AsyncFetcher:
         use_cache: bool = False,
         retry_count: int = 2
     ) -> Optional[Any]:
-        """Fetch a single URL with retry logic"""
+        """Fetch URL with session reuse and retry logic"""
         
         # Check cache first
+        cache_key = None
         if use_cache:
             cache_key = self._get_cache_key(url, params)
             if cache_key in AsyncFetcher._cache:
                 return AsyncFetcher._cache[cache_key]
         
         async with self._semaphore:
+            session = await self._get_session()
+            
             for attempt in range(retry_count + 1):
                 try:
-                    timeout = aiohttp.ClientTimeout(total=self.timeout)
-                    async with aiohttp.ClientSession(timeout=timeout) as session:
-                        merged_headers = {**self.headers, **(headers or {})}
-                        async with session.request(
-                            method, url, 
-                            params=params, 
-                            headers=merged_headers,
-                            ssl=False
-                        ) as response:
-                            if response.status == 200:
-                                if json_response:
-                                    result = await response.json()
-                                else:
-                                    result = await response.text()
-                                
-                                # Cache successful responses
-                                if use_cache and result:
-                                    if len(AsyncFetcher._cache) > self._cache_max_size:
-                                        AsyncFetcher._cache = dict(list(AsyncFetcher._cache.items())[-50:])
-                                    AsyncFetcher._cache[cache_key] = result
-                                
-                                return result
-                            elif response.status == 429:
-                                await asyncio.sleep(1 * (attempt + 1))
-                                continue
-                            return None
+                    merged_headers = {**self.headers, **(headers or {})}
+                    async with session.request(
+                        method, url, 
+                        params=params, 
+                        headers=merged_headers
+                    ) as response:
+                        if response.status == 200:
+                            if json_response:
+                                result = await response.json()
+                            else:
+                                result = await response.text()
                             
+                            # Cache successful responses
+                            if use_cache and result and cache_key:
+                                if len(AsyncFetcher._cache) > self._cache_max_size:
+                                    AsyncFetcher._cache = dict(list(AsyncFetcher._cache.items())[-50:])
+                                AsyncFetcher._cache[cache_key] = result
+                            
+                            return result
+                        elif response.status == 429:
+                            await asyncio.sleep(1 * (attempt + 1))
+                            continue
+                        return None
+                        
                 except asyncio.TimeoutError:
                     if attempt < retry_count:
                         await asyncio.sleep(0.5 * (attempt + 1))
@@ -110,6 +135,13 @@ class AsyncFetcher:
     async def fetch_json(self, url: str, params: Dict[str, Any] = None) -> Optional[dict]:
         """Fetch JSON response"""
         return await self.fetch(url, params=params, json_response=True)
+    
+    @classmethod
+    async def close(cls):
+        """Close the shared session"""
+        if cls._session and not cls._session.closed:
+            await cls._session.close()
+            cls._session = None
 
 
 # Singleton instance

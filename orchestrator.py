@@ -15,6 +15,7 @@ from functools import lru_cache
 from engines.reddit_search import create_reddit_search
 from engines.web_search import create_web_search
 from engines.youtube_search import create_youtube_search
+from engines.twitter_search import create_twitter_search
 from utils.models import SearchQuery, SearchResults
 
 
@@ -138,6 +139,7 @@ class SearchOrchestrator:
     _reddit_engine = None
     _web_engine = None
     _youtube_engine = None
+    _twitter_engine = None
     
     def __init__(self):
         # Reuse engine instances for connection pooling
@@ -147,10 +149,13 @@ class SearchOrchestrator:
             SearchOrchestrator._web_engine = create_web_search()
         if SearchOrchestrator._youtube_engine is None:
             SearchOrchestrator._youtube_engine = create_youtube_search()
+        if SearchOrchestrator._twitter_engine is None:
+            SearchOrchestrator._twitter_engine = create_twitter_search()
         
         self.reddit_engine = SearchOrchestrator._reddit_engine
         self.web_engine = SearchOrchestrator._web_engine
         self.youtube_engine = SearchOrchestrator._youtube_engine
+        self.twitter_engine = SearchOrchestrator._twitter_engine
         
         self.query_optimizer = QueryOptimizer()
         self.ranker = ResultRanker()
@@ -187,6 +192,12 @@ class SearchOrchestrator:
         if "youtube" in sources:
             tasks["youtube"] = asyncio.wait_for(
                 self.youtube_engine.search(optimized_query, query.max_results),
+                timeout=timeout
+            )
+        
+        if "twitter" in sources:
+            tasks["twitter"] = asyncio.wait_for(
+                self.twitter_engine.search(query.query, query.max_results),  # Use original query for sentiment
                 timeout=timeout
             )
         

@@ -54,6 +54,18 @@ class YouTubeResult(BaseModel):
     relevance: float = 0.0
 
 
+class TwitterResult(BaseModel):
+    """Twitter/X tweet result for sentiment analysis"""
+    text: str
+    author: str = ""
+    url: str = ""
+    likes: int = 0
+    retweets: int = 0
+    replies: int = 0
+    timestamp: str = ""
+    relevance: float = 0.0
+
+
 class SearchResults(BaseModel):
     """Aggregated search results"""
     query: str

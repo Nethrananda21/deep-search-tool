@@ -23,6 +23,7 @@ from rich import print as rprint
 
 from orchestrator import deep_search
 from config import config
+from utils.fetcher import AsyncFetcher
 
 console = Console()
 
@@ -63,7 +64,7 @@ Examples:
     parser.add_argument(
         "--sources", "-s",
         nargs="+",
-        choices=["reddit", "forums", "youtube", "all"],
+        choices=["reddit", "forums", "youtube", "twitter", "all"],
         default=["all"],
         help="Sources to search (default: all)"
     )
@@ -112,7 +113,7 @@ def build_query(args) -> dict:
         # Build from direct query
         sources = args.sources
         if "all" in sources:
-            sources = ["reddit", "forums", "youtube"]
+            sources = ["reddit", "forums", "youtube", "twitter"]
         
         return {
             "query": args.query,
@@ -195,6 +196,26 @@ def display_results(results: dict, raw_json: bool = False):
             )
         console.print(table)
     
+    # Twitter Results (for sentiment analysis)
+    if "twitter" in results["results"] and results["results"]["twitter"]:
+        console.print("\n[bold cyan]🐦 Twitter/X (Sentiment)[/]")
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("Author", style="green", width=15)
+        table.add_column("Tweet", style="white", max_width=60)
+        table.add_column("❤️", style="red", width=6)
+        table.add_column("🔁", style="blue", width=6)
+        table.add_column("URL", style="dim", max_width=30)
+        
+        for r in results["results"]["twitter"][:10]:
+            table.add_row(
+                r.get("author", "")[:15],
+                r.get("text", "")[:60],
+                str(r.get("likes", 0)),
+                str(r.get("retweets", 0)),
+                r.get("url", "")[:30]
+            )
+        console.print(table)
+    
     console.print()
 
 
@@ -246,6 +267,9 @@ async def main():
     except Exception as e:
         console.print(f"[red]Error: {e}[/]")
         sys.exit(1)
+    finally:
+        # Clean up: close the aiohttp session to avoid resource leak warnings
+        await AsyncFetcher.close()
 
 
 if __name__ == "__main__":

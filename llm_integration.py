@@ -63,6 +63,18 @@ def format_for_llm(search_results: Dict[str, Any], max_items: int = 5) -> str:
                 item["transcript"] = r.get("transcript", "")[:500]
             llm_data["sources"]["youtube"].append(item)
     
+    # Process Twitter results (for sentiment analysis)
+    if "twitter" in results and results["twitter"]:
+        llm_data["sources"]["twitter"] = []
+        for r in results["twitter"][:max_items]:
+            llm_data["sources"]["twitter"].append({
+                "text": r.get("text", ""),  # Full text for sentiment analysis
+                "author": r.get("author", ""),
+                "likes": r.get("likes", 0),
+                "retweets": r.get("retweets", 0),
+                "url": r.get("url", "")
+            })
+    
     return json.dumps(llm_data, indent=2, ensure_ascii=False)
 
 

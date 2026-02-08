@@ -137,7 +137,6 @@ The tool outputs structured JSON with results from each source:
   "search_time_ms": 2982.74
 }
 ```
-
 ---
 ## Feeding Results to Local LLM
 

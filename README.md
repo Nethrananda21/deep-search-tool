@@ -139,7 +139,6 @@ The tool outputs structured JSON with results from each source:
 ```
 
 ---
-
 ## Feeding Results to Local LLM
 
 ### Option 1: Pipe to Ollama

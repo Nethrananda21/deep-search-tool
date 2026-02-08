@@ -147,7 +147,6 @@ The tool outputs structured JSON with results from each source:
 ```bash
 python main.py --query "JBL earcup repair" --json | ollama run llama3 "Based on these search results, how do I fix my headphones?"
 ```
-
 ### Option 2: Python Script
 
 ```python
